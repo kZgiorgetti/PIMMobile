@@ -27,8 +27,11 @@ class AccessibilityController
   AccessibilityController() : super((contrast: false, font: 0));
   Future<void> restore() async {
     final p = await SharedPreferences.getInstance();
-    state =
-        (contrast: p.getBool('contrast') ?? false, font: p.getInt('font') ?? 0);
+    final savedFont = p.getInt('font') ?? 0;
+    state = (
+      contrast: p.getBool('contrast') ?? false,
+      font: savedFont.clamp(0, 3).toInt()
+    );
   }
 
   Future<void> toggleContrast() async {
@@ -96,34 +99,59 @@ class PimApp extends ConsumerWidget {
     return MaterialApp.router(
         title: 'Almoxarifado',
         debugShowCheckedModeBanner: false,
-        theme: appTheme(a.contrast, a.font),
-        routerConfig: ref.watch(_routerProvider));
+        theme: appTheme(a.contrast),
+        routerConfig: ref.watch(_routerProvider),
+        builder: (context, child) {
+          final isMobile = MediaQuery.sizeOf(context).width <= 650;
+          final scale = isMobile ? 1.0 : 1.0 + [0.0, .125, .25, .5][a.font];
+          final media = MediaQuery.of(context)
+              .copyWith(textScaler: TextScaler.linear(scale));
+          return MediaQuery(
+              data: media,
+              child: Theme(
+                  data: appTheme(a.contrast),
+                  child: child ?? const SizedBox.shrink()));
+        });
   }
 }
 
-ThemeData appTheme(bool contrast, int font) {
+ThemeData appTheme(bool contrast) {
   final primary = contrast ? const Color(0xffffff00) : const Color(0xff07535f);
   final bg = contrast ? Colors.black : const Color(0xfff5fbfc);
   final surface = contrast ? const Color(0xff0d0d0d) : const Color(0xffe8f6f8);
   final fg = contrast ? Colors.white : const Color(0xff17343a);
   return ThemeData(
       useMaterial3: false,
-      colorScheme: ColorScheme.light(
+      canvasColor: contrast ? Colors.black : surface,
+      dialogBackgroundColor: contrast ? Colors.black : surface,
+      colorScheme: (contrast ? const ColorScheme.dark() : const ColorScheme.light()).copyWith(
           primary: primary,
           onPrimary: contrast ? Colors.black : Colors.white,
           surface: surface,
           onSurface: fg,
-          error: contrast ? const Color(0xffff8080) : const Color(0xffa4001c)),
+          secondary: primary,
+          onSecondary: contrast ? Colors.black : Colors.white,
+          error: contrast ? const Color(0xffff8080) : const Color(0xffa4001c),
+          onError: Colors.black),
       scaffoldBackgroundColor: bg,
       fontFamily: 'Roboto',
-      textTheme: ThemeData.light().textTheme.apply(
-          fontSizeFactor: 1.0 + [0.0, .125, .25, .5][font],
-          bodyColor: fg,
-          displayColor: fg),
+      textTheme:
+          ThemeData.light().textTheme.apply(bodyColor: fg, displayColor: fg),
       appBarTheme: AppBarTheme(
           backgroundColor: contrast ? Colors.black : const Color(0xff07535f),
           foregroundColor: Colors.white,
           elevation: 0),
+      dialogTheme: DialogThemeData(
+          backgroundColor: contrast ? Colors.black : surface,
+          surfaceTintColor: Colors.transparent,
+          titleTextStyle:
+              TextStyle(color: fg, fontSize: 20, fontWeight: FontWeight.w500),
+          contentTextStyle: TextStyle(color: fg, fontSize: 16)),
+      dropdownMenuTheme: DropdownMenuThemeData(
+          textStyle: TextStyle(color: fg),
+          menuStyle: MenuStyle(
+              backgroundColor:
+                  WidgetStatePropertyAll(contrast ? Colors.black : surface))),
       cardTheme: CardThemeData(
           color: surface,
           shape: RoundedRectangleBorder(
@@ -133,10 +161,21 @@ ThemeData appTheme(bool contrast, int font) {
       inputDecorationTheme: InputDecorationTheme(
           filled: true,
           fillColor: bg,
-          border: OutlineInputBorder(
+          labelStyle: TextStyle(color: contrast ? Colors.white : fg),
+          floatingLabelStyle: TextStyle(color: primary),
+          hintStyle: TextStyle(
+              color:
+                  contrast ? const Color(0xffd0d0d0) : const Color(0xff526b71)),
+          prefixIconColor: contrast ? Colors.white : fg,
+          suffixIconColor: contrast ? Colors.white : fg,
+          enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(6),
               borderSide: BorderSide(
-                  color: contrast ? Colors.white : const Color(0xffc5dfe3)))));
+                  color: contrast ? Colors.white : const Color(0xffc5dfe3))),
+          focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(6),
+              borderSide: BorderSide(color: primary, width: 2)),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: BorderSide(color: contrast ? Colors.white : const Color(0xffc5dfe3)))));
 }
 
 class AppShell extends ConsumerWidget {
@@ -171,21 +210,24 @@ class AppShell extends ConsumerWidget {
         )
     ];
     final current = GoRouterState.of(context).matchedLocation;
+    final wideScreen = MediaQuery.sizeOf(context).width > 650;
     return Scaffold(
         appBar: AppBar(title: const Text('Almoxarifado'), actions: [
-          if (MediaQuery.sizeOf(context).width > 650)
+          if (wideScreen)
             Center(child: Text('Olá, ${user['nome']} (${user['perfil']})  ')),
           PopupMenuButton<String>(
               tooltip: 'Preferências e conta',
-              itemBuilder: (_) => const [
-                    PopupMenuItem(
+              itemBuilder: (_) => [
+                    const PopupMenuItem(
                         value: 'contrast',
                         child: Text('Alternar alto contraste')),
-                    PopupMenuItem(
-                        value: 'font+', child: Text('Aumentar letra')),
-                    PopupMenuItem(
-                        value: 'font-', child: Text('Diminuir letra')),
-                    PopupMenuItem(value: 'logout', child: Text('Sair'))
+                    if (wideScreen) ...const [
+                      PopupMenuItem(
+                          value: 'font+', child: Text('Aumentar letra')),
+                      PopupMenuItem(
+                          value: 'font-', child: Text('Diminuir letra')),
+                    ],
+                    const PopupMenuItem(value: 'logout', child: Text('Sair'))
                   ],
               onSelected: (v) async {
                 if (v == 'contrast') {
